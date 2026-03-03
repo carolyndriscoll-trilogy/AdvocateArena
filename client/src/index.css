@@ -1,0 +1,128 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* LIGHT MODE - Warm Parchment Palette (Neo-Editorial) */
+:root {
+  /* Backgrounds */
+  --background: 38 55% 96%;
+  --foreground: 0 0% 18%;
+  --card: 40 50% 95%;
+  --card-elevated: 40 30% 98%;
+  --card-foreground: 0 0% 18%;
+  --card-border: 44 22% 87%;
+  --border: 44 22% 87%;
+
+  /* Popover */
+  --popover: 40 50% 95%;
+  --popover-foreground: 0 0% 18%;
+  --popover-border: 44 22% 87%;
+
+  /* Primary: dark brown */
+  --primary: 23 45% 9%;
+  --primary-foreground: 0 0% 100%;
+
+  /* Secondary: teal */
+  --secondary: 175 77% 26%;
+  --secondary-foreground: 0 0% 100%;
+
+  /* Muted */
+  --muted: 38 42% 92%;
+  --muted-foreground: 0 0% 35%;
+
+  /* Accent */
+  --accent: 30 40% 93%;
+  --accent-foreground: 23 45% 9%;
+
+  /* Status colors */
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --destructive-soft: 0 60% 96%;
+  --success: 83 23% 32%;
+  --success-foreground: 0 0% 100%;
+  --success-soft: 142 50% 94%;
+  --warning: 39 54% 48%;
+  --warning-foreground: 0 0% 100%;
+  --warning-soft: 38 70% 95%;
+  --info: 200 98% 39%;
+  --info-foreground: 0 0% 100%;
+  --info-soft: 200 60% 95%;
+
+  /* Input & Ring */
+  --input: 51 13% 80%;
+  --ring: 23 45% 9%;
+
+  /* Charts */
+  --chart-1: 23 45% 9%;
+  --chart-2: 173 77% 26%;
+  --chart-3: 142 71% 45%;
+  --chart-4: 38 92% 50%;
+  --chart-5: 199 89% 48%;
+
+  /* Arena-specific: opponent vs student message colors */
+  --arena-opponent: 40 50% 95%;
+  --arena-student: 0 0% 100%;
+
+  /* Typography */
+  --font-sans: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  --font-serif: 'Libre Baskerville', Baskerville, Georgia, serif;
+  --font-mono: Menlo, monospace;
+  --radius: .5rem;
+
+  /* Shadows */
+  --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow-card-hover: 0 4px 12px rgba(34, 21, 13, 0.08), 0 2px 4px rgba(34, 21, 13, 0.04);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-serif);
+  }
+}
+
+/* Hidden scrollbar */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Styled scrollbar */
+.scrollbar-styled {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--border)) transparent;
+}
+
+.scrollbar-styled::-webkit-scrollbar {
+  width: 8px;
+}
+
+.scrollbar-styled::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-styled::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--border));
+  border-radius: 4px;
+}
+
+/* Word counter warning pulse */
+@keyframes word-warning {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.animate-word-warning {
+  animation: word-warning 1s ease-in-out infinite;
+}
