@@ -1,5 +1,4 @@
 import { Request, Response, NextFunction } from "express";
-import { auth } from "../lib/auth";
 import type { AuthContext, UserRole } from "@shared/types";
 
 declare global {
@@ -10,52 +9,22 @@ declare global {
   }
 }
 
-function buildAuthContext(user: { id: string; role?: string | null }): AuthContext {
-  const role = (user.role as UserRole) || "user";
-  return {
-    userId: user.id,
-    role,
-    isAdmin: role === "admin",
+/**
+ * Auth is disabled for now. All requests get a hardcoded dev user.
+ * Re-enable BetterAuth later by restoring session checks.
+ */
+export async function requireAuth(req: Request, _res: Response, next: NextFunction) {
+  req.authContext = {
+    userId: "dev-user-1",
+    role: "guide",
+    isAdmin: true,
   };
-}
-
-export async function requireAuth(req: Request, res: Response, next: NextFunction) {
-  try {
-    const session = await auth.api.getSession({
-      headers: req.headers as any,
-    });
-
-    if (!session) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    req.authContext = buildAuthContext(session.user as any);
-    next();
-  } catch (error) {
-    console.error("Auth middleware error:", error);
-    return res.status(401).json({ error: "Unauthorized" });
-  }
+  next();
 }
 
 export async function requireAdmin(req: Request, res: Response, next: NextFunction) {
-  try {
-    const session = await auth.api.getSession({
-      headers: req.headers as any,
-    });
-
-    if (!session) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const authContext = buildAuthContext(session.user as any);
-    if (!authContext.isAdmin) {
-      return res.status(403).json({ error: "Forbidden: Admin access required" });
-    }
-
-    req.authContext = authContext;
-    next();
-  } catch (error) {
-    console.error("Auth middleware error:", error);
-    return res.status(401).json({ error: "Unauthorized" });
+  if (!req.authContext?.isAdmin) {
+    return res.status(403).json({ error: "Forbidden: Admin access required" });
   }
+  next();
 }
