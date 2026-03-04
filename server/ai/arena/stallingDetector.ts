@@ -1,11 +1,33 @@
 import { callOpenRouterModel, extractJSON } from '../llm-utils';
+import type { StallingResultV2 } from '@shared/types';
 
 const STALLING_MODEL = 'meta-llama/llama-3.1-8b-instruct';
 
-interface StallingResult {
-  isStalling: boolean;
-  flags: string[];
-  details: string;
+// Common filler words/phrases to count
+const FILLER_PATTERNS = [
+  /\bum\b/gi,
+  /\buh\b/gi,
+  /\blike\b(?!\s+(?:a|the|this|that|to|in))/gi, // "like" as filler, not comparison
+  /\byou know\b/gi,
+  /\bi mean\b/gi,
+  /\bbasically\b/gi,
+  /\bliterally\b/gi,
+  /\bkind of\b/gi,
+  /\bsort of\b/gi,
+  /\byeah so\b/gi,
+  /\banyway\b/gi,
+];
+
+/**
+ * Count filler words/phrases in a message.
+ */
+function countFillers(text: string): number {
+  let count = 0;
+  for (const pattern of FILLER_PATTERNS) {
+    const matches = text.match(pattern);
+    if (matches) count += matches.length;
+  }
+  return count;
 }
 
 /**
@@ -25,15 +47,18 @@ function textSimilarity(a: string, b: string): number {
 }
 
 /**
- * Check for stalling behavior: repetition and evasion.
+ * Check for stalling behavior: repetition, evasion, and filler tracking.
+ * No hard word cap — filler detection replaces it per v2 spec.
  */
 export async function detectStalling(
   currentMessage: string,
   previousMessages: Array<{ role: string; content: string }>,
-): Promise<StallingResult> {
+): Promise<StallingResultV2> {
   const flags: string[] = [];
+  const fillerCount = countFillers(currentMessage);
+  let repetitionScore = 0;
 
-  // 1. Word count check (handled at route level, but double-check)
+  // 1. Extremely short response check (still useful)
   const wordCount = currentMessage.trim().split(/\s+/).length;
   if (wordCount < 10) {
     flags.push('extremely_short_response');
@@ -47,6 +72,7 @@ export async function detectStalling(
 
   for (const prev of previousUserMessages) {
     const similarity = textSimilarity(currentMessage, prev);
+    repetitionScore = Math.max(repetitionScore, similarity);
     if (similarity > 0.7) {
       flags.push('high_repetition');
       break;
@@ -84,9 +110,17 @@ Student's response: "${currentMessage}"`,
       }
     } catch (err: any) {
       console.error('[StallingDetector] LLM check failed:', err.message);
-      // Don't penalize on detector failure
     }
   }
+
+  // Calculate penalty points
+  // Filler penalty: 0.25 pts per 5+ fillers in a single message
+  const fillerPenalty = fillerCount >= 5 ? Math.floor(fillerCount / 5) * 0.25 : 0;
+  // Repetition penalty: 0.5 pts if repetitionScore > 0.7
+  const repetitionPenalty = repetitionScore > 0.7 ? 0.5 : 0;
+  // Stalling penalty: 1 pt for evasion/extremely short
+  const stallingPenalty = flags.includes('evasion_detected') || flags.includes('extremely_short_response') ? 1 : 0;
+  const penaltyPoints = fillerPenalty + repetitionPenalty + stallingPenalty;
 
   return {
     isStalling: flags.length > 0,
@@ -94,5 +128,8 @@ Student's response: "${currentMessage}"`,
     details: flags.length > 0
       ? `Stalling detected: ${flags.join(', ')}`
       : 'No stalling detected',
+    fillerCount,
+    repetitionScore,
+    penaltyPoints,
   };
 }

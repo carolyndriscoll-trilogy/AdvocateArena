@@ -31,15 +31,17 @@ export type PerformanceLevel = 'exemplary' | 'proficient' | 'developing' | 'begi
 
 export type OpponentPersona = 'philosopher' | 'empiricist' | 'contrarian' | 'strategist';
 
-export type DifficultyLevel = 'curious_skeptic' | 'domain_expert';
+export type DifficultyLevel = 'curious_skeptic' | 'domain_expert' | 'sources_weaponized';
+
+export type InputMode = 'text' | 'voice';
 
 /** 5 scoring axes, 4 criteria each = 20 points max */
 export const SCORING_AXES = [
-  'evidence_quality',
-  'argumentation_depth',
-  'counter_engagement',
-  'adaptability',
-  'synthesis',
+  'factual_accuracy',
+  'depth_of_reasoning',
+  'epistemic_honesty',
+  'composure_under_pressure',
+  'argument_evolution',
 ] as const;
 
 export type ScoringAxis = typeof SCORING_AXES[number];
@@ -84,6 +86,35 @@ export interface AdaptiveState {
   upgradeTriggered: boolean;
   upgradeRound?: number;
 }
+
+export interface AutoReviewResult {
+  pass: boolean;
+  feedback: string[];
+  suggestedRevisions: string[];
+}
+
+export interface FillerPenalty {
+  round: number;
+  fillerCount: number;
+  repetitionScore: number;
+  penaltyPoints: number;
+}
+
+export interface StallingResultV2 {
+  isStalling: boolean;
+  flags: string[];
+  details: string;
+  fillerCount: number;
+  repetitionScore: number;
+  penaltyPoints: number;
+}
+
+export type SparringSequenceType =
+  | 'foundations'
+  | 'evidence_stress_test'
+  | 'pressure_chamber'
+  | 'systems_mapping'
+  | 'mirror_match';
 
 export interface ConversationMessage {
   role: 'user' | 'assistant';

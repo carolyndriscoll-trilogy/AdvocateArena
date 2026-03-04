@@ -3,10 +3,8 @@ import { Switch, Route } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
-import { ProtectedRoute } from "@/components/layout/ProtectedRoute";
 
 const Home = lazy(() => import("@/pages/Home"));
-const Login = lazy(() => import("@/pages/Login"));
 const CreateDefense = lazy(() => import("@/pages/CreateDefense"));
 const DefenseDetail = lazy(() => import("@/pages/DefenseDetail"));
 const SubmissionForm = lazy(() => import("@/pages/SubmissionForm"));
@@ -29,36 +27,29 @@ function PageLoader() {
 function Router() {
   return (
     <Switch>
-      <Route path="/login" component={Login} />
-      <Route path="/">
-        <ProtectedRoute><Home /></ProtectedRoute>
-      </Route>
-      <Route path="/arena/new">
-        <ProtectedRoute><CreateDefense /></ProtectedRoute>
-      </Route>
+      <Route path="/" component={Home} />
+      <Route path="/arena/new" component={CreateDefense} />
       <Route path="/arena/:id">
-        {(params) => <ProtectedRoute><DefenseDetail id={params.id} /></ProtectedRoute>}
+        {(params) => <DefenseDetail id={params.id} />}
       </Route>
       <Route path="/arena/:id/submit">
-        {(params) => <ProtectedRoute><SubmissionForm id={params.id} /></ProtectedRoute>}
+        {(params) => <SubmissionForm id={params.id} />}
       </Route>
       <Route path="/arena/:id/debate">
-        {(params) => <ProtectedRoute><DebateArena id={params.id} /></ProtectedRoute>}
+        {(params) => <DebateArena id={params.id} />}
       </Route>
       <Route path="/arena/:id/results">
-        {(params) => <ProtectedRoute><Results id={params.id} /></ProtectedRoute>}
+        {(params) => <Results id={params.id} />}
       </Route>
       <Route path="/arena/:id/reflection">
-        {(params) => <ProtectedRoute><Reflection id={params.id} /></ProtectedRoute>}
+        {(params) => <Reflection id={params.id} />}
       </Route>
-      <Route path="/guide">
-        <ProtectedRoute><GuideDashboard /></ProtectedRoute>
-      </Route>
+      <Route path="/guide" component={GuideDashboard} />
       <Route path="/guide/courses/:id">
-        {(params) => <ProtectedRoute><GuideCourse id={params.id} /></ProtectedRoute>}
+        {(params) => <GuideCourse id={params.id} />}
       </Route>
       <Route path="/guide/defenses/:id">
-        {(params) => <ProtectedRoute><GuideDefenseReview id={params.id} /></ProtectedRoute>}
+        {(params) => <GuideDefenseReview id={params.id} />}
       </Route>
       <Route component={NotFound} />
     </Switch>

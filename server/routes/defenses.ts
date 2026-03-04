@@ -7,6 +7,8 @@ import { anthropic } from '@ai-sdk/anthropic';
 import { buildOpponentSystemPrompt, buildRoundDirective } from '../ai/arena/opponentBuilder';
 import { detectStalling } from '../ai/arena/stallingDetector';
 import { getMidDebateSignals, computeAdaptiveStateUpdate } from '../ai/arena/adaptiveEngine';
+import { autoReviewSubmission } from '../ai/arena/autoReviewer';
+import { getAvailableSequences } from '../ai/arena/sparringSequences';
 import { withJob } from '../utils/withJob';
 import { storeMessages } from '../utils/honcho';
 import type { ConversationMessage, AdaptiveState, OpponentPersona, DifficultyLevel } from '@shared/types';
@@ -15,14 +17,19 @@ export const defensesRouter = Router();
 
 // Create a new defense
 defensesRouter.post('/api/defenses', requireAuth, asyncHandler(async (req, res) => {
-  const { title, courseId, mode } = req.body;
+  const { title, courseId, mode, maxRounds, inputMode } = req.body;
   if (!title) throw new BadRequestError('Title is required');
+  if (maxRounds !== undefined && (maxRounds < 1 || maxRounds > 10)) {
+    throw new BadRequestError('maxRounds must be between 1 and 10');
+  }
 
   const defense = await storage.createDefense({
     userId: req.authContext!.userId,
     courseId: courseId || null,
     mode: mode || 'assessed',
     title,
+    ...(maxRounds && { maxRounds }),
+    ...(inputMode && { inputMode }),
   });
 
   res.status(201).json(defense);
@@ -72,7 +79,27 @@ defensesRouter.post('/api/defenses/:id/submission', requireAuth, asyncHandler(as
     sourceDocuments: sourceDocuments || [],
   });
 
-  await storage.updateDefenseStatus(defenseId, 'submitted');
+  if (defense.mode === 'sparring') {
+    // Sparring mode: auto-approve, generate config, set active
+    await storage.updateSubmissionReview(defenseId, 'approved', 'Auto-approved (sparring mode)', 'system');
+    await storage.updateDefenseStatus(defenseId, 'approved');
+    // Queue config generation
+    await withJob('arena:generate-config').forPayload({ defenseId }).queue();
+  } else {
+    // Assessed mode: run auto-review, store result, set under_review for guide
+    await storage.updateDefenseStatus(defenseId, 'submitted');
+    // Run auto-review in background (don't block response)
+    autoReviewSubmission({ pov, evidence, counterEvidence }).then(async (result) => {
+      try {
+        await storage.updateAutoReviewResult(defenseId, result);
+        if (result.pass) {
+          await storage.updateDefenseStatus(defenseId, 'under_review');
+        }
+      } catch (err: any) {
+        console.error('[AutoReview] Failed to store result:', err.message);
+      }
+    });
+  }
 
   res.status(201).json(submission);
 }));
@@ -85,7 +112,9 @@ defensesRouter.post('/api/defenses/:id/start', requireAuth, asyncHandler(async (
   const defense = await storage.getDefenseById(defenseId);
   if (!defense) throw new NotFoundError('Defense not found');
   if (defense.userId !== req.authContext!.userId) throw new ForbiddenError();
-  if (defense.status !== 'approved') throw new BadRequestError('Defense must be approved before starting debate');
+  if (defense.status !== 'approved' && defense.status !== 'active') {
+    throw new BadRequestError('Defense must be approved before starting debate');
+  }
 
   // Check for existing active attempt
   const existingAttempt = await storage.getActiveLevelAttempt(defenseId);
@@ -112,15 +141,14 @@ defensesRouter.post('/api/defenses/:id/debate', requireAuth, asyncHandler(async 
   const { message } = req.body;
   if (!message) throw new BadRequestError('Message is required');
 
-  // Word cap enforcement
   const wordCount = message.trim().split(/\s+/).length;
-  if (wordCount > 150) throw new BadRequestError('Response exceeds 150 word limit');
 
   const attempt = await storage.getActiveLevelAttempt(defenseId);
   if (!attempt) throw new NotFoundError('No active level attempt');
 
+  const maxRounds = defense.maxRounds || 10;
   const currentRound = attempt.currentRound + 1;
-  if (currentRound > 10) {
+  if (currentRound > maxRounds) {
     throw new BadRequestError('Debate has reached maximum rounds');
   }
 
@@ -140,6 +168,17 @@ defensesRouter.post('/api/defenses/:id/debate', requireAuth, asyncHandler(async 
       round: currentRound,
       type: 'stalling',
       details: stallingResult.details,
+    });
+  }
+
+  // Track filler penalties
+  const fillerPenalties = [...((attempt.fillerPenalties as any[]) || [])];
+  if (stallingResult.fillerCount > 0 || stallingResult.repetitionScore > 0.5) {
+    fillerPenalties.push({
+      round: currentRound,
+      fillerCount: stallingResult.fillerCount,
+      repetitionScore: stallingResult.repetitionScore,
+      penaltyPoints: stallingResult.penaltyPoints,
     });
   }
 
@@ -175,6 +214,7 @@ defensesRouter.post('/api/defenses/:id/debate', requireAuth, asyncHandler(async 
   // Build round directive
   const roundDirective = buildRoundDirective({
     round: currentRound,
+    maxRounds,
     adaptiveState,
     counterArguments: (config.counterArguments as string[]) || [],
     pivotTopics: (config.pivotTopics as string[]) || [],
@@ -195,6 +235,28 @@ defensesRouter.post('/api/defenses/:id/debate', requireAuth, asyncHandler(async 
     });
   }
 
+  // Run adaptive signals BEFORE streaming to get coaching nudge
+  let coachingNudge: string | undefined;
+  try {
+    const lastOpponentMsg = conversationHistory
+      .filter(m => m.role === 'assistant')
+      .slice(-1)[0]?.content || '';
+    const signals = await getMidDebateSignals(message, lastOpponentMsg);
+    coachingNudge = signals.coachingNudge;
+    // Pre-compute adaptive state (will finalize in onFinish)
+    var precomputedAdaptiveState = computeAdaptiveStateUpdate(adaptiveState, signals, currentRound);
+  } catch (err: any) {
+    console.error('[Debate] Adaptive signal failed:', err.message);
+    var precomputedAdaptiveState = adaptiveState;
+  }
+
+  // Send coaching nudge as a header (available before stream starts)
+  if (coachingNudge) {
+    res.setHeader('X-Coaching-Nudge', encodeURIComponent(coachingNudge));
+  }
+  res.setHeader('X-Current-Round', currentRound.toString());
+  res.setHeader('X-Max-Rounds', maxRounds.toString());
+
   // Stream with Vercel AI SDK
   const result = streamText({
     model: anthropic('claude-sonnet-4-5-20250514'),
@@ -211,28 +273,17 @@ defensesRouter.post('/api/defenses/:id/debate', requireAuth, asyncHandler(async 
 
       const finalHistory = [...updatedHistory, assistantMessage];
 
-      // Run adaptive signals
-      let newAdaptiveState = adaptiveState;
-      try {
-        const lastOpponentMsg = conversationHistory
-          .filter(m => m.role === 'assistant')
-          .slice(-1)[0]?.content || '';
-        const signals = await getMidDebateSignals(message, lastOpponentMsg);
-        newAdaptiveState = computeAdaptiveStateUpdate(adaptiveState, signals, currentRound);
-      } catch (err: any) {
-        console.error('[Debate] Adaptive signal failed:', err.message);
-      }
-
       // Update attempt in DB
       await storage.updateLevelAttempt(attempt.id, {
         conversationHistory: finalHistory,
         currentRound,
-        adaptiveState: newAdaptiveState,
+        adaptiveState: precomputedAdaptiveState,
         penaltyLog,
+        fillerPenalties,
       });
 
-      // After round 10: queue evaluation job
-      if (currentRound >= 10) {
+      // After final round: queue evaluation job
+      if (currentRound >= maxRounds) {
         await withJob('arena:evaluate')
           .forPayload({ defenseId, attemptId: attempt.id })
           .queue();
@@ -300,6 +351,25 @@ defensesRouter.post('/api/defenses/:id/reflection', requireAuth, asyncHandler(as
   res.status(201).json(result);
 }));
 
+// Submit revised position after debate
+defensesRouter.post('/api/defenses/:id/revised-pov', requireAuth, asyncHandler(async (req, res) => {
+  const defenseId = parseInt(req.params.id);
+  if (isNaN(defenseId)) throw new BadRequestError('Invalid defense ID');
+
+  const defense = await storage.getDefenseById(defenseId);
+  if (!defense) throw new NotFoundError('Defense not found');
+  if (defense.userId !== req.authContext!.userId) throw new ForbiddenError();
+  if (defense.status !== 'complete' && defense.status !== 'failed') {
+    throw new BadRequestError('Can only submit revised position after debate completion');
+  }
+
+  const { revisedPov } = req.body;
+  if (!revisedPov || !revisedPov.trim()) throw new BadRequestError('Revised position is required');
+
+  const updated = await storage.updateRevisedPov(defenseId, revisedPov.trim());
+  res.json(updated);
+}));
+
 // Get competitive stack for a defense
 defensesRouter.get('/api/defenses/:id/competitive-stack', requireAuth, asyncHandler(async (req, res) => {
   const defenseId = parseInt(req.params.id);
@@ -349,6 +419,11 @@ defensesRouter.post('/api/defenses/:id/appeal', requireAuth, asyncHandler(async 
   });
 
   res.status(201).json(appeal);
+}));
+
+// Get available sparring sequences
+defensesRouter.get('/api/sparring-sequences', requireAuth, asyncHandler(async (_req, res) => {
+  res.json(getAvailableSequences());
 }));
 
 // Get user's coaching prescriptions across all defenses

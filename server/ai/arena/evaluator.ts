@@ -8,51 +8,51 @@ const RUBRIC = `# Adversarial Debate Evaluation Rubric
 
 ## Scoring: 5 axes, 4 binary criteria each = 20 points max
 
-### 1. Evidence Quality (4 pts)
-- C1: Cited specific, verifiable sources (not vague references)
-- C2: Evidence directly supports claims (not tangentially related)
-- C3: Used multiple independent sources (not a single source repeated)
-- C4: Acknowledged limitations of own evidence
+### 1. Factual Accuracy (4 pts)
+- C1: Made verifiable claims with specific details (not vague assertions)
+- C2: Attributed claims to specific sources when making evidence-based arguments
+- C3: Acknowledged and corrected errors when challenged on factual points
+- C4: Used precise numbers, dates, or data points where relevant (numerical precision)
 
-### 2. Argumentation Depth (4 pts)
-- C1: Made logically structured arguments (clear premises → conclusion)
-- C2: Distinguished between correlation and causation where relevant
-- C3: Addressed underlying mechanisms, not just surface claims
-- C4: Built arguments progressively across rounds (not repetitive)
+### 2. Depth of Reasoning (4 pts)
+- C1: Traced causal chains beyond surface-level explanations (cause → effect → implication)
+- C2: Considered multiple perspectives or interpretations of the same evidence
+- C3: Addressed broader implications and downstream consequences of their position
+- C4: Made novel connections between ideas or evidence that weren't obvious
 
-### 3. Counter-Engagement (4 pts)
-- C1: Directly addressed opponent's specific challenges (not deflected)
-- C2: Acknowledged valid points in opponent's arguments
-- C3: Provided substantive rebuttals with evidence (not just disagreement)
-- C4: Identified weaknesses in opponent's reasoning
+### 3. Epistemic Honesty (4 pts)
+- C1: Explicitly acknowledged the limits of their knowledge or evidence
+- C2: Distinguished between what the evidence shows vs. what they infer or believe
+- C3: Updated or refined their position in response to strong counterarguments
+- C4: Demonstrated intellectual humility (didn't overstate certainty or dismiss valid criticism)
 
-### 4. Adaptability (4 pts)
-- C1: Adjusted strategy when initial arguments were challenged
-- C2: Introduced new evidence or angles when pressed
-- C3: Maintained coherence despite pressure (didn't contradict self)
-- C4: Handled surprise topics or pivots with substantive responses
+### 4. Composure Under Pressure (4 pts)
+- C1: Stayed focused on the substantive issue when challenged aggressively
+- C2: Redirected unproductive exchanges back to evidence and reasoning gracefully
+- C3: Avoided stalling, filibustering, or filling space without substance
+- C4: Maintained analytical rigor in later rounds (didn't deteriorate under fatigue)
 
-### 5. Synthesis (4 pts)
-- C1: Connected evidence across multiple sources/domains
-- C2: Addressed the "so what" — connected argument to broader implications
-- C3: Demonstrated nuanced understanding (not black/white thinking)
-- C4: Steelmanned opponent's position before countering it`;
+### 5. Argument Evolution (4 pts)
+- C1: Built on earlier points rather than repeating or abandoning them
+- C2: Integrated valid points from the opponent's arguments into their own position
+- C3: Progressively refined their position across rounds (not static)
+- C4: Maintained a coherent narrative arc from opening to closing arguments`;
 
 const EVALUATION_PROMPT = `${RUBRIC}
 
 ## Instructions
 Evaluate the following debate transcript. For each criterion, determine MET or NOT MET and quote specific evidence from the transcript.
 
-Return JSON in this exact format:
+Return JSON in this exact format (axis names must be: factual_accuracy, depth_of_reasoning, epistemic_honesty, composure_under_pressure, argument_evolution):
 {
   "scores": [
     {
-      "axis": "evidence_quality",
+      "axis": "factual_accuracy",
       "criteria": [
-        {"name": "Cited specific verifiable sources", "met": true, "evidence": "In round 3, student cited..."},
-        {"name": "Evidence directly supports claims", "met": true, "evidence": "..."},
-        {"name": "Used multiple independent sources", "met": false, "evidence": "Student only referenced..."},
-        {"name": "Acknowledged evidence limitations", "met": false, "evidence": "Never addressed limitations..."}
+        {"name": "Made verifiable claims with specific details", "met": true, "evidence": "In round 3, student cited..."},
+        {"name": "Attributed claims to specific sources", "met": true, "evidence": "..."},
+        {"name": "Acknowledged and corrected errors", "met": false, "evidence": "Student never addressed..."},
+        {"name": "Used precise numbers or data points", "met": false, "evidence": "Claims lacked specificity..."}
       ],
       "score": 2,
       "maxScore": 4

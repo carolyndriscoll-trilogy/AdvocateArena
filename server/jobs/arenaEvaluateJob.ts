@@ -2,6 +2,7 @@ import type { JobHelpers } from 'graphile-worker';
 import { storage } from '../storage';
 import { evaluateDebate } from '../ai/arena/evaluator';
 import { generateCoaching, extractPrescriptions } from '../ai/arena/coachingGenerator';
+import { updateEloAfterDebate } from '../services/elo';
 import { storeObservation } from '../utils/honcho';
 import { withJob } from '../utils/withJob';
 
@@ -80,6 +81,24 @@ export async function arenaEvaluateJob(
         prescription: p.prescription,
       });
     }
+  }
+
+  // Update Elo rating
+  try {
+    const config = defense.config;
+    const difficulty = (config?.difficultyLevel as string) || 'curious_skeptic';
+    const passed = evaluation.totalScore >= 12;
+    const eloResult = await updateEloAfterDebate(
+      defense.userId,
+      difficulty,
+      evaluation.totalScore,
+      evaluation.maxScore,
+      defenseId,
+      passed,
+    );
+    helpers.logger.info('Elo updated', eloResult);
+  } catch (err: any) {
+    helpers.logger.error('Elo update failed', { error: err.message });
   }
 
   // Fire-and-forget: store Honcho observation

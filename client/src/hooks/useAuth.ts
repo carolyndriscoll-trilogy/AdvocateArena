@@ -1,29 +1,18 @@
-import { useQuery } from '@tanstack/react-query';
-import { getQueryFn } from '@/lib/queryClient';
-
-interface User {
-  id: string;
-  name: string;
-  email: string;
-  role: string;
-}
-
-interface Session {
-  session: { id: string; userId: string };
-  user: User;
-}
-
+/**
+ * Auth is disabled for now. Returns a hardcoded dev user.
+ * Re-enable BetterAuth later by restoring session query.
+ */
 export function useAuth() {
-  const { data, isLoading } = useQuery<Session | null>({
-    queryKey: ['/api/auth/get-session'],
-    queryFn: getQueryFn({ on401: 'returnNull' }),
-  });
-
   return {
-    user: data?.user ?? null,
-    isLoading,
-    isAuthenticated: !!data?.user,
-    isGuide: data?.user?.role === 'guide' || data?.user?.role === 'admin',
-    isAdmin: data?.user?.role === 'admin',
+    user: {
+      id: "dev-user-1",
+      name: "Dev User",
+      email: "dev@example.com",
+      role: "guide",
+    },
+    isLoading: false,
+    isAuthenticated: true,
+    isGuide: true,
+    isAdmin: true,
   };
 }
