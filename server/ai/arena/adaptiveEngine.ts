@@ -7,11 +7,12 @@ interface MidDebateSignals {
   evidenceUse: number;
   responsiveness: number;
   clarity: number;
+  coachingNudge?: string;
 }
 
 /**
- * Get mid-debate signal scores using a cheap model.
- * Runs after each student response to track performance trend.
+ * Get mid-debate signal scores + coaching nudge using a cheap model.
+ * Runs after each student response to track performance trend and offer coaching.
  */
 export async function getMidDebateSignals(
   studentMessage: string,
@@ -20,15 +21,20 @@ export async function getMidDebateSignals(
   try {
     const raw = await callOpenRouterModel(
       SIGNAL_MODEL,
-      `Score this debate response on three dimensions (0.0 to 1.0):
+      `Score this debate response on three dimensions (0.0 to 1.0) and provide a brief coaching nudge:
 - evidenceUse: Does the student cite specific evidence to support their claims?
 - responsiveness: Does the student directly address the opponent's specific challenge?
 - clarity: Is the argument well-structured and easy to follow?
+- coachingNudge: A single, specific coaching tip (under 20 words). Examples:
+  - "Consider addressing the opponent's point about X"
+  - "Your evidence on Y was strong — build on it"
+  - "Try a new angle instead of repeating your earlier point"
+  - "" (empty string if the response is strong with no obvious improvement)
 
-Return JSON: {"evidenceUse": 0.7, "responsiveness": 0.8, "clarity": 0.6}`,
+Return JSON: {"evidenceUse": 0.7, "responsiveness": 0.8, "clarity": 0.6, "coachingNudge": "..."}`,
       `Opponent's challenge: "${opponentChallenge}"
 Student's response: "${studentMessage}"`,
-      100,
+      200,
       0.0,
     );
 
@@ -37,6 +43,7 @@ Student's response: "${studentMessage}"`,
       evidenceUse: Math.max(0, Math.min(1, signals.evidenceUse || 0)),
       responsiveness: Math.max(0, Math.min(1, signals.responsiveness || 0)),
       clarity: Math.max(0, Math.min(1, signals.clarity || 0)),
+      coachingNudge: signals.coachingNudge || undefined,
     };
   } catch (err: any) {
     console.error('[Adaptive] Signal detection failed:', err.message);

@@ -5,6 +5,7 @@ import { defensesRouter } from "./routes/defenses";
 import { guideRouter } from "./routes/guide";
 import { gauntletRouter } from "./routes/gauntlet";
 import { adminRouter, normingReadRouter } from "./routes/admin";
+import { leaderboardRouter } from "./routes/leaderboard";
 
 export async function registerRoutes(server: Server, app: Express) {
   // Domain routers
@@ -13,6 +14,7 @@ export async function registerRoutes(server: Server, app: Express) {
   app.use(gauntletRouter);
   app.use(adminRouter);
   app.use(normingReadRouter);
+  app.use(leaderboardRouter);
 
   // Global error handler (must be after all routes)
   app.use(errorHandler);

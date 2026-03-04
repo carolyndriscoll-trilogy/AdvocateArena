@@ -104,6 +104,26 @@ export async function updateSubmissionReview(
   return updated;
 }
 
+export async function updateAutoReviewResult(defenseId: number, result: {
+  pass: boolean;
+  feedback: string[];
+  suggestedRevisions: string[];
+}) {
+  const [updated] = await db.update(defenseSubmissions)
+    .set({ autoReviewResult: result })
+    .where(eq(defenseSubmissions.defenseId, defenseId))
+    .returning();
+  return updated;
+}
+
+export async function updateRevisedPov(defenseId: number, revisedPov: string) {
+  const [updated] = await db.update(defenseSubmissions)
+    .set({ revisedPov })
+    .where(eq(defenseSubmissions.defenseId, defenseId))
+    .returning();
+  return updated;
+}
+
 // ─── Configs ────────────────────────────────────────────────────────────────
 
 export async function createConfig(data: {
@@ -173,6 +193,7 @@ export async function updateLevelAttempt(id: number, data: Partial<{
   finalScore: number;
   evaluatorDisagreement: boolean;
   penaltyLog: any;
+  fillerPenalties: any;
   status: string;
 }>) {
   const [updated] = await db.update(defenseLevelAttempts)

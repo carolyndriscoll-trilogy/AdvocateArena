@@ -16,10 +16,28 @@ export default function DebateArena({ id }: { id: string }) {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [started, setStarted] = useState(false);
+  const [coachingNudge, setCoachingNudge] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const wordCount = input.trim().split(/\s+/).filter(Boolean).length;
   const currentRound = messages.filter(m => m.role === 'user').length;
+  const maxRounds = defense?.maxRounds || 10;
+
+  // Load existing conversation history on mount (for resume)
+  useEffect(() => {
+    if (defense?.status === 'active' && defense.levelAttempts) {
+      const activeAttempt = defense.levelAttempts.find((a: any) => a.status === 'in_progress');
+      if (activeAttempt?.conversationHistory?.length > 0) {
+        const history = activeAttempt.conversationHistory.map((m: any) => ({
+          role: m.role,
+          content: m.content,
+          round: m.round,
+        }));
+        setMessages(history);
+        setStarted(true);
+      }
+    }
+  }, [defense]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -31,12 +49,13 @@ export default function DebateArena({ id }: { id: string }) {
   }
 
   async function handleSend() {
-    if (!input.trim() || wordCount > 150 || sending) return;
+    if (!input.trim() || sending) return;
 
+    const round = currentRound + 1;
     const userMessage: Message = {
       role: 'user',
       content: input.trim(),
-      round: currentRound + 1,
+      round,
     };
 
     setMessages(prev => [...prev, userMessage]);
@@ -47,15 +66,47 @@ export default function DebateArena({ id }: { id: string }) {
       const res = await apiRequest('POST', `/api/defenses/${id}/debate`, {
         message: userMessage.content,
       });
-      const data = await res.json();
 
-      // TODO: Replace with streaming response handling
-      if (data.response) {
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: data.response,
-          round: currentRound + 1,
-        }]);
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({ message: 'Unknown error' }));
+        throw new Error(errorData.message || `HTTP ${res.status}`);
+      }
+
+      // Read coaching nudge from header
+      const nudge = res.headers.get('X-Coaching-Nudge');
+      if (nudge) {
+        setCoachingNudge(decodeURIComponent(nudge));
+        setTimeout(() => setCoachingNudge(null), 10000); // Auto-dismiss after 10s
+      }
+
+      // Stream the text response
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error('No response body');
+
+      const decoder = new TextDecoder();
+      let fullText = '';
+
+      // Add placeholder assistant message
+      setMessages(prev => [...prev, { role: 'assistant', content: '', round }]);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        fullText += chunk;
+
+        // Update the last message with accumulated text
+        setMessages(prev => {
+          const updated = [...prev];
+          updated[updated.length - 1] = { role: 'assistant', content: fullText, round };
+          return updated;
+        });
+      }
+
+      // If we got no text at all, remove the placeholder
+      if (!fullText.trim()) {
+        setMessages(prev => prev.slice(0, -1));
       }
     } catch (err: any) {
       console.error('Debate error:', err);
@@ -79,8 +130,8 @@ export default function DebateArena({ id }: { id: string }) {
           <h1 className="text-lg font-bold mt-1">{defense?.title}</h1>
         </div>
         <div className="flex items-center gap-4 text-sm">
-          <div className={`font-medium ${currentRound >= 9 ? 'text-warning' : 'text-muted-foreground'}`}>
-            Round {currentRound} / 10
+          <div className={`font-medium ${currentRound >= maxRounds - 1 ? 'text-warning' : 'text-muted-foreground'}`}>
+            Round {currentRound} / {maxRounds}
           </div>
         </div>
       </header>
@@ -107,7 +158,7 @@ export default function DebateArena({ id }: { id: string }) {
               <div className="text-center py-12">
                 <h2 className="text-lg font-serif mb-2">Ready to Enter the Arena?</h2>
                 <p className="text-sm text-muted-foreground mb-4">
-                  You'll face 10 rounds of adversarial debate. 150 words per response.
+                  You'll face {maxRounds} round{maxRounds !== 1 ? 's' : ''} of adversarial debate.
                 </p>
                 <button
                   onClick={handleStart}
@@ -157,8 +208,16 @@ export default function DebateArena({ id }: { id: string }) {
             <div ref={messagesEndRef} />
           </div>
 
+          {/* Coaching nudge */}
+          {coachingNudge && (
+            <div className="mx-4 mt-2 px-3 py-2 bg-info-soft border border-info/20 rounded-md text-xs text-info flex items-center justify-between">
+              <span className="font-serif italic">{coachingNudge}</span>
+              <button onClick={() => setCoachingNudge(null)} className="ml-2 text-info/60 hover:text-info">&times;</button>
+            </div>
+          )}
+
           {/* Input */}
-          {(started || defense?.status === 'active') && currentRound < 10 && (
+          {(started || defense?.status === 'active') && currentRound < maxRounds && (
             <div className="border-t border-border p-4 bg-card">
               <div className="flex items-end gap-2">
                 <div className="flex-1 relative">
@@ -177,16 +236,15 @@ export default function DebateArena({ id }: { id: string }) {
                     }}
                   />
                   <span className={`absolute bottom-2 right-2 text-xs ${
-                    wordCount > 150 ? 'text-destructive font-bold' :
-                    wordCount > 140 ? 'text-warning animate-word-warning' :
+                    wordCount > 200 ? 'text-warning' :
                     'text-muted-foreground'
                   }`}>
-                    {wordCount}/150
+                    {wordCount} words
                   </span>
                 </div>
                 <button
                   onClick={handleSend}
-                  disabled={!input.trim() || wordCount > 150 || sending}
+                  disabled={!input.trim() || sending}
                   className="px-4 py-2 bg-primary text-primary-foreground rounded-md font-medium hover:opacity-90 disabled:opacity-50 h-[60px]"
                 >
                   Send
@@ -200,23 +258,27 @@ export default function DebateArena({ id }: { id: string }) {
         <div className="w-48 border-l border-border bg-card p-4 shrink-0 hidden xl:block">
           <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Rounds</h3>
           <div className="space-y-1">
-            {Array.from({ length: 10 }, (_, i) => i + 1).map((round) => (
-              <div
-                key={round}
-                className={`text-xs px-2 py-1 rounded ${
-                  round <= currentRound
-                    ? 'bg-success-soft text-success'
-                    : round === currentRound + 1
-                    ? 'bg-warning-soft text-warning font-medium'
-                    : 'text-muted-foreground'
-                }`}
-              >
-                Round {round}
-                {round === 3 && <span className="ml-1 opacity-60">(steelman)</span>}
-                {round === 9 && <span className="ml-1 opacity-60">(pivot)</span>}
-                {round === 10 && <span className="ml-1 opacity-60">(final)</span>}
-              </div>
-            ))}
+            {Array.from({ length: maxRounds }, (_, i) => i + 1).map((round) => {
+              const steelmanRound = Math.max(2, Math.round(maxRounds * 0.3));
+              const pivotRound = Math.round(maxRounds * 0.8);
+              return (
+                <div
+                  key={round}
+                  className={`text-xs px-2 py-1 rounded ${
+                    round <= currentRound
+                      ? 'bg-success-soft text-success'
+                      : round === currentRound + 1
+                      ? 'bg-warning-soft text-warning font-medium'
+                      : 'text-muted-foreground'
+                  }`}
+                >
+                  Round {round}
+                  {round === steelmanRound && <span className="ml-1 opacity-60">(steelman)</span>}
+                  {round === pivotRound && round !== maxRounds && <span className="ml-1 opacity-60">(pivot)</span>}
+                  {round === maxRounds && <span className="ml-1 opacity-60">(final)</span>}
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

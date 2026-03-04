@@ -1,10 +1,41 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
+import { useState } from 'react';
+import { apiRequest } from '@/lib/queryClient';
+
+const AXIS_LABELS: Record<string, { label: string; description: string }> = {
+  factual_accuracy: { label: 'Factual Accuracy', description: 'Verifiable claims, source attribution, error acknowledgment, numerical precision' },
+  depth_of_reasoning: { label: 'Depth of Reasoning', description: 'Causal chains, multiple perspectives, implications, novel connections' },
+  epistemic_honesty: { label: 'Epistemic Honesty', description: 'Acknowledges limits, distinguishes evidence vs. inference, updates position, intellectual humility' },
+  composure_under_pressure: { label: 'Composure Under Pressure', description: 'Stays focused, redirects gracefully, avoids stalling, maintains rigor late' },
+  argument_evolution: { label: 'Argument Evolution', description: 'Builds on earlier points, integrates opponent\'s valid points, refines position, coherent arc' },
+  // Legacy axis names for backward compatibility
+  evidence_quality: { label: 'Evidence Quality', description: 'Source quality and citation' },
+  argumentation_depth: { label: 'Argumentation Depth', description: 'Logical structure and depth' },
+  counter_engagement: { label: 'Counter-Engagement', description: 'Addressing challenges directly' },
+  adaptability: { label: 'Adaptability', description: 'Adjusting under pressure' },
+  synthesis: { label: 'Synthesis', description: 'Cross-source connections' },
+};
 
 export default function Results({ id }: { id: string }) {
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
+  const [revisedPov, setRevisedPov] = useState('');
+  const [showRevisedForm, setShowRevisedForm] = useState(false);
+
   const { data, isLoading } = useQuery({
     queryKey: ['/api/defenses', id, 'scores'],
+  });
+
+  const submitRevisedPov = useMutation({
+    mutationFn: async (text: string) => {
+      const res = await apiRequest('POST', `/api/defenses/${id}/revised-pov`, { revisedPov: text });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/defenses', id, 'scores'] });
+      setShowRevisedForm(false);
+    },
   });
 
   if (isLoading) {
@@ -41,10 +72,11 @@ export default function Results({ id }: { id: string }) {
               <div className="space-y-3">
                 {attempt.evaluationOutput.scores?.map((axis: any) => (
                   <div key={axis.axis} className="bg-card p-4 rounded-lg border border-border">
-                    <div className="flex justify-between items-center mb-2">
-                      <h3 className="font-medium capitalize">{axis.axis.replace(/_/g, ' ')}</h3>
+                    <div className="flex justify-between items-center mb-1">
+                      <h3 className="font-medium">{AXIS_LABELS[axis.axis]?.label || axis.axis.replace(/_/g, ' ')}</h3>
                       <span className="font-semibold">{axis.score}/{axis.maxScore}</span>
                     </div>
+                    <p className="text-xs text-muted-foreground mb-2">{AXIS_LABELS[axis.axis]?.description}</p>
                     <div className="w-full bg-muted rounded-full h-2">
                       <div
                         className="bg-secondary rounded-full h-2 transition-all"
@@ -85,6 +117,53 @@ export default function Results({ id }: { id: string }) {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Revised Position */}
+        {results?.defense?.totalScore != null && (
+          <div className="mt-8">
+            <h2 className="text-lg font-semibold mb-4">Revised Position</h2>
+            {results?.attempts?.[0]?.revisedPov ? (
+              <div className="bg-card p-4 rounded-lg border border-border">
+                <p className="text-sm font-serif leading-relaxed">{results.attempts[0].revisedPov}</p>
+              </div>
+            ) : showRevisedForm ? (
+              <div className="bg-card p-4 rounded-lg border border-border">
+                <p className="text-sm text-muted-foreground mb-3">
+                  After the debate, how has your position evolved? Incorporate what you learned from the opponent's challenges.
+                </p>
+                <textarea
+                  value={revisedPov}
+                  onChange={(e) => setRevisedPov(e.target.value)}
+                  placeholder="Write your revised position..."
+                  className="w-full px-3 py-2 border border-input rounded-md bg-background focus:outline-none focus:ring-2 focus:ring-ring resize-none min-h-[120px] text-sm"
+                  rows={4}
+                />
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={() => submitRevisedPov.mutate(revisedPov)}
+                    disabled={!revisedPov.trim() || submitRevisedPov.isPending}
+                    className="px-4 py-2 bg-primary text-primary-foreground rounded-md text-sm font-medium hover:opacity-90 disabled:opacity-50"
+                  >
+                    {submitRevisedPov.isPending ? 'Saving...' : 'Save Revised Position'}
+                  </button>
+                  <button
+                    onClick={() => { setShowRevisedForm(false); setRevisedPov(''); }}
+                    className="px-4 py-2 border border-border rounded-md text-sm"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowRevisedForm(true)}
+                className="px-4 py-2 border border-border rounded-md text-sm hover:bg-accent"
+              >
+                Write Your Revised Position
+              </button>
+            )}
           </div>
         )}
 

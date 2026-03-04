@@ -94,6 +94,8 @@ export const adversaryDefenses = pgTable('adversary_defenses', {
   mode: text('mode').notNull().default('assessed'), // assessed | sparring
   status: text('status').notNull().default('draft'), // draft→submitted→under_review→approved→active→complete|failed
   title: text('title').notNull(),
+  maxRounds: integer('max_rounds').notNull().default(10), // configurable 1-10
+  inputMode: text('input_mode').notNull().default('text'), // text | voice
   isRetake: boolean('is_retake').notNull().default(false),
   originalDefenseId: integer('original_defense_id'),
   totalScore: integer('total_score'),
@@ -115,6 +117,12 @@ export const defenseSubmissions = pgTable('defense_submissions', {
   reviewStatus: text('review_status').notNull().default('pending'), // pending | approved | rejected | revision_requested
   reviewNotes: text('review_notes'),
   reviewedBy: text('reviewed_by'),
+  revisedPov: text('revised_pov'),
+  autoReviewResult: jsonb('auto_review_result').$type<{
+    pass: boolean;
+    feedback: string[];
+    suggestedRevisions: string[];
+  }>(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow().$onUpdate(() => new Date()),
 });
@@ -126,7 +134,13 @@ export const defenseConfigs = pgTable('defense_configs', {
   counterArguments: jsonb('counter_arguments').$type<string[]>().default([]),
   pivotTopics: jsonb('pivot_topics').$type<string[]>().default([]),
   opponentPersona: text('opponent_persona').default('philosopher'), // philosopher | empiricist | contrarian | strategist
-  difficultyLevel: text('difficulty_level').default('curious_skeptic'), // curious_skeptic | domain_expert
+  difficultyLevel: text('difficulty_level').default('curious_skeptic'), // curious_skeptic | domain_expert | sources_weaponized
+  voiceConfig: jsonb('voice_config').$type<{
+    ttsVoice?: string;
+    sttLanguage?: string;
+    timeCap?: number;
+    prepWindow?: number;
+  }>(),
   guideInjections: jsonb('guide_injections').$type<Array<{ round: number; directive: string }>>().default([]),
   extractedSourceText: text('extracted_source_text'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -177,6 +191,12 @@ export const defenseLevelAttempts = pgTable('defense_level_attempts', {
   finalScore: integer('final_score'),
   evaluatorDisagreement: boolean('evaluator_disagreement').default(false),
   penaltyLog: jsonb('penalty_log').$type<Array<{ round: number; type: string; details: string }>>().default([]),
+  fillerPenalties: jsonb('filler_penalties').$type<Array<{
+    round: number;
+    fillerCount: number;
+    repetitionScore: number;
+    penaltyPoints: number;
+  }>>().default([]),
   status: text('status').notNull().default('in_progress'), // in_progress | evaluating | passed | failed
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow().$onUpdate(() => new Date()),
@@ -272,6 +292,44 @@ export const normingExemplars = pgTable('norming_exemplars', {
   score: integer('score').notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
+
+// ─── Elo / Gamification Tables ──────────────────────────────────────────────
+
+export const seasons = pgTable('seasons', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  startDate: timestamp('start_date').notNull(),
+  endDate: timestamp('end_date').notNull(),
+  isActive: boolean('is_active').notNull().default(true),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+export const userStats = pgTable('user_stats', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => user.id),
+  eloRating: integer('elo_rating').notNull().default(1200),
+  totalPoints: integer('total_points').notNull().default(0),
+  seasonId: integer('season_id').references(() => seasons.id),
+  wins: integer('wins').notNull().default(0),
+  losses: integer('losses').notNull().default(0),
+  streak: integer('streak').notNull().default(0),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow().$onUpdate(() => new Date()),
+}, (table) => [
+  uniqueIndex('user_stats_user_season_unique').on(table.userId, table.seasonId),
+  index('user_stats_elo_idx').on(table.eloRating),
+]);
+
+export const pointTransactions = pgTable('point_transactions', {
+  id: serial('id').primaryKey(),
+  userId: text('user_id').notNull().references(() => user.id),
+  amount: integer('amount').notNull(),
+  reason: text('reason').notNull(),
+  defenseId: integer('defense_id').references(() => adversaryDefenses.id),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (table) => [
+  index('point_txn_user_idx').on(table.userId),
+]);
 
 // ─── Relations ──────────────────────────────────────────────────────────────
 

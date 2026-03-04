@@ -63,7 +63,7 @@ export function useCreateDefense() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (data: { title: string; courseId?: number; mode?: string }) => {
+    mutationFn: async (data: { title: string; courseId?: number; mode?: string; maxRounds?: number; inputMode?: string }) => {
       const res = await apiRequest('POST', '/api/defenses', data);
       return res.json();
     },
